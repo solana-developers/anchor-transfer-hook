@@ -1,14 +1,17 @@
-use anchor_lang::prelude::*;
+use anchor_lang::{prelude::*, system_program::{Transfer, transfer}};
 use anchor_spl::token_interface::{Mint, TokenAccount};
-use solana_program::program::invoke_signed;
-use solana_program::system_instruction;
+use solana_program::{program::invoke_signed, system_instruction};
 use spl_pod::primitives::PodBool;
-use spl_tlv_account_resolution::account::ExtraAccountMeta;
-use spl_tlv_account_resolution::state::ExtraAccountMetaList;
-use spl_transfer_hook_interface::collect_extra_account_metas_signer_seeds;
-use spl_transfer_hook_interface::instruction::{ExecuteInstruction, TransferHookInstruction};
+use spl_tlv_account_resolution::{
+    account::ExtraAccountMeta, 
+    state::ExtraAccountMetaList
+};
+use spl_transfer_hook_interface::{
+    collect_extra_account_metas_signer_seeds, 
+    instruction::{ExecuteInstruction, TransferHookInstruction}
+};
 
-declare_id!("8rjA4fZxc44LwAqr1NkqLKkiYuDwDJbzKDTACeDyerzQ");
+declare_id!("DrWbQtYJGtsoRwzKqAbHKHKsCJJfpysudF39GBVFSxub");
 
 #[program]
 pub mod transfer_hook {
@@ -38,6 +41,18 @@ pub mod transfer_hook {
         let account_size = ExtraAccountMetaList::size_of(account_metas.len())? as u64;
         msg!("ExtraAccountMetaList Size: {}", account_size);
 
+        let lamports =  Rent::get()?.minimum_balance(account_size as usize);
+        transfer(
+            CpiContext::new(
+                ctx.accounts.system_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.payer.to_account_info(),
+                    to: ctx.accounts.extra_account.to_account_info(),
+                },
+            ),
+            lamports,
+        )?;
+
         let bump_seed = [ctx.bumps.extra_account];
         let mint = ctx.accounts.mint.key();
         let signer_seeds = collect_extra_account_metas_signer_seeds(&mint, &bump_seed);
@@ -63,6 +78,14 @@ pub mod transfer_hook {
         msg!("Previous counter: {}", counter.count);
         counter.count = counter.count.checked_add(1).unwrap();
         msg!("Counter incremented! Current count: {}", counter.count);
+        
+        msg!("Source: {}", ctx.accounts.source.key());
+        msg!("Mint: {}", ctx.accounts.mint.key());
+        msg!("Destination: {}", ctx.accounts.destination.key());
+        msg!("Owner: {}", ctx.accounts.owner.key());
+        msg!("ExtraAccountMetaList: {}", ctx.accounts.extra_account.key());
+        msg!("Counter: {}", ctx.accounts.counter.key());
+
         Ok(())
     }
 
@@ -115,8 +138,12 @@ pub struct Initialize<'info> {
 
 #[derive(Accounts)]
 pub struct InitializeExtraAccountMetaList<'info> {
+    #[account(mut)]
+    payer: Signer<'info>,
+
     /// CHECK: ExtraAccountMetaList Account, must use these seeds
     #[account(
+        mut,
         seeds = [b"extra-account-metas", mint.key().as_ref()], 
         bump)
     ]

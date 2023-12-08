@@ -39,6 +39,23 @@ describe("transfer-hook", () => {
   const mint = new Keypair();
   const decimals = 2;
 
+  const sourceTokenAccount = getAssociatedTokenAddressSync(
+    mint.publicKey,
+    wallet.publicKey,
+    false,
+    TOKEN_2022_PROGRAM_ID,
+    ASSOCIATED_TOKEN_PROGRAM_ID
+  );
+
+  const recipient = Keypair.generate();
+  const destinationTokenAccount = getAssociatedTokenAddressSync(
+    mint.publicKey,
+    recipient.publicKey,
+    false,
+    TOKEN_2022_PROGRAM_ID,
+    ASSOCIATED_TOKEN_PROGRAM_ID
+  );
+
   it("Create Counter Account", async () => {
     try {
       const txSig = await program.methods
@@ -65,7 +82,7 @@ describe("transfer-hook", () => {
     const lamports =
       await provider.connection.getMinimumBalanceForRentExemption(mintLen);
 
-    const mintTransaction = new Transaction().add(
+    const transaction = new Transaction().add(
       SystemProgram.createAccount({
         fromPubkey: wallet.publicKey,
         newAccountPubkey: mint.publicKey,
@@ -90,7 +107,7 @@ describe("transfer-hook", () => {
 
     const txSig = await sendAndConfirmTransaction(
       provider.connection,
-      mintTransaction,
+      transaction,
       [wallet.payer, mint]
     );
     console.log(`Transaction Signature: ${txSig}`);
@@ -102,13 +119,10 @@ describe("transfer-hook", () => {
       program.programId
     );
 
-    // TODO: figure out how to calculate size directly
-    // 51 logged out from the program
-    const lamports = await connection.getMinimumBalanceForRentExemption(51);
-
     const initializeExtraAccountMetaListInstruction = await program.methods
       .initializeExtraAccountMetaList()
       .accounts({
+        payer: wallet.publicKey,
         extraAccount: extraAccountMetaListPDA,
         counter: counterPDA,
         mint: mint.publicKey,
@@ -116,11 +130,6 @@ describe("transfer-hook", () => {
       .instruction();
 
     const transaction = new Transaction().add(
-      SystemProgram.transfer({
-        fromPubkey: wallet.publicKey,
-        toPubkey: extraAccountMetaListPDA,
-        lamports: lamports,
-      }),
       initializeExtraAccountMetaListInstruction
     );
 
@@ -132,28 +141,14 @@ describe("transfer-hook", () => {
     console.log("Transaction Signature:", txSig);
   });
 
-  it("Transfer Hook", async () => {
-    const authorityATA = getAssociatedTokenAddressSync(
-      mint.publicKey,
-      wallet.publicKey,
-      false,
-      TOKEN_2022_PROGRAM_ID,
-      ASSOCIATED_TOKEN_PROGRAM_ID
-    );
+  it("Create Token Accounts and Mint Tokens", async () => {
+    // 100 tokens
+    const amount = 100 * 10 ** decimals;
 
-    const recipient = Keypair.generate();
-    const recipientATA = getAssociatedTokenAddressSync(
-      mint.publicKey,
-      recipient.publicKey,
-      false,
-      TOKEN_2022_PROGRAM_ID,
-      ASSOCIATED_TOKEN_PROGRAM_ID
-    );
-
-    const mintToTransaction = new Transaction().add(
+    const transaction = new Transaction().add(
       createAssociatedTokenAccountInstruction(
         wallet.publicKey,
-        authorityATA,
+        sourceTokenAccount,
         wallet.publicKey,
         mint.publicKey,
         TOKEN_2022_PROGRAM_ID,
@@ -161,7 +156,7 @@ describe("transfer-hook", () => {
       ),
       createAssociatedTokenAccountInstruction(
         wallet.publicKey,
-        recipientATA,
+        destinationTokenAccount,
         recipient.publicKey,
         mint.publicKey,
         TOKEN_2022_PROGRAM_ID,
@@ -169,29 +164,36 @@ describe("transfer-hook", () => {
       ),
       createMintToInstruction(
         mint.publicKey,
-        authorityATA,
+        sourceTokenAccount,
         wallet.publicKey,
-        100 * 10 ** decimals,
+        amount,
         [],
         TOKEN_2022_PROGRAM_ID
       )
     );
 
-    await sendAndConfirmTransaction(provider.connection, mintToTransaction, [
+    const txSig = await sendAndConfirmTransaction(connection, transaction, [
       wallet.payer,
     ]);
 
+    console.log(`Transaction Signature: ${txSig}`);
+  });
+
+  it("Transfer Hook", async () => {
+    // 1 token
+    const amount = 1 * 10 ** decimals;
     const transferInstruction = createTransferCheckedInstruction(
-      authorityATA,
+      sourceTokenAccount,
       mint.publicKey,
-      recipientATA,
+      destinationTokenAccount,
       wallet.publicKey,
-      1 * 10 ** decimals,
+      amount,
       decimals,
       [],
       TOKEN_2022_PROGRAM_ID
     );
-    const instruction = await addExtraAccountsToInstruction(
+
+    const instructionWithExtraAccounts = await addExtraAccountsToInstruction(
       connection,
       transferInstruction,
       mint.publicKey,
@@ -199,9 +201,9 @@ describe("transfer-hook", () => {
       TOKEN_2022_PROGRAM_ID
     );
 
-    const transaction = new Transaction().add(instruction);
+    const transaction = new Transaction().add(instructionWithExtraAccounts);
     const txSig = await sendAndConfirmTransaction(
-      provider.connection,
+      connection,
       transaction,
       [wallet.payer],
       { skipPreflight: true }
