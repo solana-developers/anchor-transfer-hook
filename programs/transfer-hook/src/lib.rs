@@ -1,10 +1,10 @@
 use anchor_lang::{prelude::*, system_program::{Transfer, transfer}};
-use anchor_spl::token_interface::{Mint, TokenAccount};
+use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface, TransferChecked, transfer_checked};
 use solana_program::{program::invoke_signed, system_instruction};
-use spl_pod::primitives::PodBool;
 use spl_tlv_account_resolution::{
     account::ExtraAccountMeta, 
-    state::ExtraAccountMetaList
+    state::ExtraAccountMetaList,
+    seeds::Seed,
 };
 use spl_transfer_hook_interface::{
     collect_extra_account_metas_signer_seeds, 
@@ -28,12 +28,20 @@ pub mod transfer_hook {
     pub fn initialize_extra_account_meta_list(
         ctx: Context<InitializeExtraAccountMetaList>,
     ) -> Result<()> {
-        let account_metas = [ExtraAccountMeta {
-            discriminator: 0,
-            address_config: ctx.accounts.counter.key().to_bytes(),
-            is_signer: PodBool::from(false),
-            is_writable: PodBool::from(true),
-        }];
+        let account_metas = [
+            ExtraAccountMeta::new_with_pubkey(&ctx.accounts.counter.key(), false, true).unwrap(),
+            ExtraAccountMeta::new_with_pubkey(&ctx.accounts.token_program.key(), false, false).unwrap(),
+            ExtraAccountMeta::new_with_seeds(
+                &[
+                    Seed::Literal {
+                        bytes: b"delegate".to_vec(),
+                    },
+                    Seed::AccountKey { index: 0 },
+                ],
+                false,
+                false,
+            ).unwrap(),
+        ];
 
         let extra_account = &ctx.accounts.extra_account;
         let program_id = ctx.program_id;
@@ -78,14 +86,35 @@ pub mod transfer_hook {
         msg!("Previous counter: {}", counter.count);
         counter.count = counter.count.checked_add(1).unwrap();
         msg!("Counter incremented! Current count: {}", counter.count);
+
+        msg!("Token Program: {}", ctx.accounts.token_program.key());
+
+
+        let source_token = ctx.accounts.source_token.key();
+        let signer_seeds: &[&[&[u8]]] = &[&[b"delegate", source_token.as_ref(), &[ctx.bumps.delegate]]];
+        transfer_checked(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                TransferChecked {
+                    from: ctx.accounts.source_token.to_account_info(),
+                    mint: ctx.accounts.mint.to_account_info(),
+                    to: ctx.accounts.destination_token.to_account_info(),
+                    authority: ctx.accounts.delegate.to_account_info(),
+                },
+            ).with_signer(signer_seeds),
+            ctx.accounts.source_token.delegated_amount,
+            ctx.accounts.mint.decimals,
+        )?;
         
-        msg!("Source: {}", ctx.accounts.source.key());
+        msg!("Source: {}", ctx.accounts.source_token.key());
         msg!("Mint: {}", ctx.accounts.mint.key());
-        msg!("Destination: {}", ctx.accounts.destination.key());
+        msg!("Destination: {}", ctx.accounts.destination_token.key());
         msg!("Owner: {}", ctx.accounts.owner.key());
         msg!("ExtraAccountMetaList: {}", ctx.accounts.extra_account.key());
         msg!("Counter: {}", ctx.accounts.counter.key());
 
+        msg!("Delegate: {}", ctx.accounts.delegate.key());
+        msg!("Source Delegate: {:?}", ctx.accounts.source_token.delegate);
         Ok(())
     }
 
@@ -101,12 +130,6 @@ pub mod transfer_hook {
                 let amount_bytes = amount.to_le_bytes();
                 __private::__global::transfer_hook(program_id, accounts, &amount_bytes)
             }
-            // TransferHookInstruction::InitializeExtraAccountMetaList {
-            //     extra_account_metas: _,
-            // } => {
-            //     msg!("Instruction: InitializeExtraAccountMetas");
-            //     Ok(())
-            // }
             _ => return Err(ProgramError::InvalidInstructionData.into()),
         }
         // pub const TRANSFER_HOOK_DISCRIMINATOR: [u8; 8] = [105, 37, 101, 197, 75, 251, 102, 26];
@@ -154,6 +177,7 @@ pub struct InitializeExtraAccountMetaList<'info> {
         bump = counter.bump,               
     )]
     pub counter: Account<'info, Counter>,
+    pub token_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
 }
 
@@ -161,10 +185,12 @@ pub struct InitializeExtraAccountMetaList<'info> {
 // TODO: Add constraints
 #[derive(Accounts)]
 pub struct TransferHook<'info> {
-    pub source: InterfaceAccount<'info, TokenAccount>,
+    pub source_token: InterfaceAccount<'info, TokenAccount>,
     pub mint: InterfaceAccount<'info, Mint>,
-    pub destination: InterfaceAccount<'info, TokenAccount>,
-    pub owner: SystemAccount<'info>,
+    pub destination_token: InterfaceAccount<'info, TokenAccount>,
+    /// CHECK: source token account owner, can be SystemAccount or PDA owned by another program
+    pub owner: UncheckedAccount<'info>,
+
     /// CHECK: ExtraAccountMetaList Account, must use these seeds
     #[account(
         seeds = [b"extra-account-metas", mint.key().as_ref()], 
@@ -176,6 +202,12 @@ pub struct TransferHook<'info> {
         bump = counter.bump,               
     )]
     pub counter: Account<'info, Counter>,
+    pub token_program: Interface<'info, TokenInterface>,
+    #[account(
+        seeds = [b"delegate", source_token.key().as_ref()],
+        bump,               
+    )]
+    pub delegate: SystemAccount<'info>,
 }
 
 #[account]
