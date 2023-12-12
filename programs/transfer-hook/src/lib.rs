@@ -1,14 +1,19 @@
-use anchor_lang::{prelude::*, system_program::{Transfer, transfer}};
-use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface, TransferChecked, transfer_checked};
+use anchor_lang::{
+    prelude::*,
+    system_program::{transfer, Transfer},
+};
+use anchor_spl::{
+    associated_token::AssociatedToken,
+    token::Token,
+    token_interface::{transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked},
+};
 use solana_program::{program::invoke_signed, system_instruction};
 use spl_tlv_account_resolution::{
-    account::ExtraAccountMeta, 
-    state::ExtraAccountMetaList,
-    seeds::Seed,
+    account::ExtraAccountMeta, seeds::Seed, state::ExtraAccountMetaList,
 };
 use spl_transfer_hook_interface::{
-    collect_extra_account_metas_signer_seeds, 
-    instruction::{ExecuteInstruction, TransferHookInstruction}
+    collect_extra_account_metas_signer_seeds,
+    instruction::{ExecuteInstruction, TransferHookInstruction},
 };
 
 declare_id!("DrWbQtYJGtsoRwzKqAbHKHKsCJJfpysudF39GBVFSxub");
@@ -17,30 +22,30 @@ declare_id!("DrWbQtYJGtsoRwzKqAbHKHKsCJJfpysudF39GBVFSxub");
 pub mod transfer_hook {
     use super::*;
 
-    pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
-        let counter = &mut ctx.accounts.counter;
-        counter.bump = ctx.bumps.counter; // store bump seed in `Counter` account
-        msg!("Counter account created! Current count: {}", counter.count);
-        msg!("Counter bump: {}", counter.bump);
-        Ok(())
-    }
-
     pub fn initialize_extra_account_meta_list(
         ctx: Context<InitializeExtraAccountMetaList>,
     ) -> Result<()> {
         let account_metas = [
-            ExtraAccountMeta::new_with_pubkey(&ctx.accounts.counter.key(), false, true).unwrap(),
-            ExtraAccountMeta::new_with_pubkey(&ctx.accounts.token_program.key(), false, false).unwrap(),
-            ExtraAccountMeta::new_with_seeds(
+            ExtraAccountMeta::new_with_pubkey(&ctx.accounts.wsol_mint.key(), false, false).unwrap(),
+            ExtraAccountMeta::new_with_pubkey(&ctx.accounts.token_program.key(), false, false)
+                .unwrap(),
+            ExtraAccountMeta::new_with_pubkey(
+                &ctx.accounts.associated_token_program.key(),
+                false,
+                false,
+            )
+            .unwrap(),
+            ExtraAccountMeta::new_external_pda_with_seeds(
+                7, // associated token program index
                 &[
-                    Seed::Literal {
-                        bytes: b"delegate".to_vec(),
-                    },
-                    Seed::AccountKey { index: 0 },
+                    Seed::AccountKey { index: 3 }, // owner index
+                    Seed::AccountKey { index: 4 }, // token program index
+                    Seed::AccountKey { index: 5 }, // wsol mint index
                 ],
                 false,
-                false,
-            ).unwrap(),
+                true,
+            )
+            .unwrap(),
         ];
 
         let extra_account = &ctx.accounts.extra_account;
@@ -49,7 +54,7 @@ pub mod transfer_hook {
         let account_size = ExtraAccountMetaList::size_of(account_metas.len())? as u64;
         msg!("ExtraAccountMetaList Size: {}", account_size);
 
-        let lamports =  Rent::get()?.minimum_balance(account_size as usize);
+        let lamports = Rent::get()?.minimum_balance(account_size as usize);
         transfer(
             CpiContext::new(
                 ctx.accounts.system_program.to_account_info(),
@@ -80,41 +85,41 @@ pub mod transfer_hook {
 
     pub fn transfer_hook(ctx: Context<TransferHook>, amount: u64) -> Result<()> {
         msg!("Transfer Hook Invoked");
-        msg!("Transfer Amount: {}", amount);
 
-        let counter = &mut ctx.accounts.counter;
-        msg!("Previous counter: {}", counter.count);
-        counter.count = counter.count.checked_add(1).unwrap();
-        msg!("Counter incremented! Current count: {}", counter.count);
+        // Derive Expected ATA
+        let (pda, _bump) = Pubkey::find_program_address(
+            &[
+                ctx.accounts.owner.key.as_ref(),
+                ctx.accounts.token_program.key.as_ref(),
+                ctx.accounts.wsol_mint.to_account_info().key.as_ref(),
+            ],
+            ctx.accounts.associated_token_program.key,
+        );
 
-        msg!("Token Program: {}", ctx.accounts.token_program.key());
+        msg!("PDA: {}", pda);
+        // msg!(
+        //     "wsol_token_account: {}",
+        //     ctx.accounts.wsol_token_account.key()
+        // );
 
+        // let source_token = ctx.accounts.source_token.key();
+        // let signer_seeds: &[&[&[u8]]] = &[&[b"delegate", source_token.as_ref(), &[ctx.bumps.delegate]]];
+        // transfer_checked(
+        //     CpiContext::new(
+        //         ctx.accounts.token_program.to_account_info(),
+        //         TransferChecked {
+        //             from: ctx.accounts.source_token.to_account_info(),
+        //             mint: ctx.accounts.mint.to_account_info(),
+        //             to: ctx.accounts.destination_token.to_account_info(),
+        //             authority: ctx.accounts.delegate.to_account_info(),
+        //         },
+        //     ).with_signer(signer_seeds),
+        //     ctx.accounts.source_token.delegated_amount,
+        //     ctx.accounts.mint.decimals,
+        // )?;
 
-        let source_token = ctx.accounts.source_token.key();
-        let signer_seeds: &[&[&[u8]]] = &[&[b"delegate", source_token.as_ref(), &[ctx.bumps.delegate]]];
-        transfer_checked(
-            CpiContext::new(
-                ctx.accounts.token_program.to_account_info(),
-                TransferChecked {
-                    from: ctx.accounts.source_token.to_account_info(),
-                    mint: ctx.accounts.mint.to_account_info(),
-                    to: ctx.accounts.destination_token.to_account_info(),
-                    authority: ctx.accounts.delegate.to_account_info(),
-                },
-            ).with_signer(signer_seeds),
-            ctx.accounts.source_token.delegated_amount,
-            ctx.accounts.mint.decimals,
-        )?;
-        
-        msg!("Source: {}", ctx.accounts.source_token.key());
-        msg!("Mint: {}", ctx.accounts.mint.key());
-        msg!("Destination: {}", ctx.accounts.destination_token.key());
-        msg!("Owner: {}", ctx.accounts.owner.key());
-        msg!("ExtraAccountMetaList: {}", ctx.accounts.extra_account.key());
-        msg!("Counter: {}", ctx.accounts.counter.key());
-
-        msg!("Delegate: {}", ctx.accounts.delegate.key());
-        msg!("Source Delegate: {:?}", ctx.accounts.source_token.delegate);
+        // msg!("Delegate: {}", ctx.accounts.delegate.key());
+        // msg!("Source Delegate: {:?}", ctx.accounts.source_token.delegate);
         Ok(())
     }
 
@@ -127,36 +132,18 @@ pub mod transfer_hook {
         match instruction {
             TransferHookInstruction::Execute { amount } => {
                 msg!("Instruction: Execute");
+
+                // Iterating through accounts and printing each with its index
+                for (index, account) in accounts.iter().enumerate() {
+                    msg!("Account Index: {}, Account: {:?}", index, account.key);
+                }
+
                 let amount_bytes = amount.to_le_bytes();
                 __private::__global::transfer_hook(program_id, accounts, &amount_bytes)
             }
             _ => return Err(ProgramError::InvalidInstructionData.into()),
         }
-        // pub const TRANSFER_HOOK_DISCRIMINATOR: [u8; 8] = [105, 37, 101, 197, 75, 251, 102, 26];
-        // let (discriminator, remaining_ix_data) = data.split_at(8);
-
-        // if discriminator == &TRANSFER_HOOK_DISCRIMINATOR {
-        //     __private::__global::transfer_hook(program_id, accounts, remaining_ix_data)
-        // } else {
-        //     Err(ProgramError::InvalidInstructionData.into())
-        // }
     }
-}
-
-#[derive(Accounts)]
-pub struct Initialize<'info> {
-    #[account(mut)]
-    pub user: Signer<'info>,
-
-    #[account(
-        init,
-        seeds = [b"counter"], // optional seeds for pda
-        bump,                 // bump seed for pda
-        payer = user,
-        space = 8 + Counter::INIT_SPACE
-    )]
-    pub counter: Account<'info, Counter>,
-    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -172,12 +159,9 @@ pub struct InitializeExtraAccountMetaList<'info> {
     ]
     pub extra_account: AccountInfo<'info>,
     pub mint: InterfaceAccount<'info, Mint>,
-    #[account(
-        seeds = [b"counter"],
-        bump = counter.bump,               
-    )]
-    pub counter: Account<'info, Counter>,
+    pub wsol_mint: InterfaceAccount<'info, Mint>,
     pub token_program: Interface<'info, TokenInterface>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
 }
 
@@ -185,34 +169,26 @@ pub struct InitializeExtraAccountMetaList<'info> {
 // TODO: Add constraints
 #[derive(Accounts)]
 pub struct TransferHook<'info> {
-    pub source_token: InterfaceAccount<'info, TokenAccount>,
-    pub mint: InterfaceAccount<'info, Mint>,
-    pub destination_token: InterfaceAccount<'info, TokenAccount>,
+    pub source_token: InterfaceAccount<'info, TokenAccount>, // 0
+    pub mint: InterfaceAccount<'info, Mint>,                 // 1
+    pub destination_token: InterfaceAccount<'info, TokenAccount>, // 2
     /// CHECK: source token account owner, can be SystemAccount or PDA owned by another program
-    pub owner: UncheckedAccount<'info>,
+    pub owner: UncheckedAccount<'info>, // 3
 
     /// CHECK: ExtraAccountMetaList Account, must use these seeds
     #[account(
         seeds = [b"extra-account-metas", mint.key().as_ref()], 
         bump)
     ]
-    pub extra_account: UncheckedAccount<'info>,
-    #[account(
-        seeds = [b"counter"],
-        bump = counter.bump,               
-    )]
-    pub counter: Account<'info, Counter>,
-    pub token_program: Interface<'info, TokenInterface>,
-    #[account(
-        seeds = [b"delegate", source_token.key().as_ref()],
-        bump,               
-    )]
-    pub delegate: SystemAccount<'info>,
-}
-
-#[account]
-#[derive(InitSpace)]
-pub struct Counter {
-    pub count: u64, // 8 bytes
-    pub bump: u8,   // 1 byte
+    pub extra_account: UncheckedAccount<'info>, // 4
+    pub wsol_mint: InterfaceAccount<'info, Mint>, // 5
+    pub token_program: Interface<'info, TokenInterface>, // 6
+    pub associated_token_program: Program<'info, AssociatedToken>, // 7
+    /// CHECK:
+    pub wsol_token_account: UncheckedAccount<'info>,
+    // #[account(
+    //     seeds = [b"delegate", source_token.key().as_ref()],
+    //     bump,
+    // )]
+    // pub delegate: SystemAccount<'info>,
 }

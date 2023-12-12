@@ -7,6 +7,7 @@ import {
   Transaction,
   sendAndConfirmTransaction,
   Keypair,
+  LAMPORTS_PER_SOL,
 } from "@solana/web3.js";
 import {
   ExtensionType,
@@ -25,6 +26,9 @@ import {
   getExtraAccountMetaAddress,
   getExtraAccountMetas,
   createApproveInstruction,
+  createSyncNativeInstruction,
+  NATIVE_MINT,
+  TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 
 describe("transfer-hook", () => {
@@ -35,11 +39,6 @@ describe("transfer-hook", () => {
   const program = anchor.workspace.TransferHook as Program<TransferHook>;
   const wallet = provider.wallet as anchor.Wallet;
   const connection = provider.connection;
-
-  const [counterPDA] = PublicKey.findProgramAddressSync(
-    [Buffer.from("counter")],
-    program.programId
-  );
 
   const mint = new Keypair();
   const decimals = 2;
@@ -60,26 +59,6 @@ describe("transfer-hook", () => {
     TOKEN_2022_PROGRAM_ID,
     ASSOCIATED_TOKEN_PROGRAM_ID
   );
-
-  it("Create Counter Account", async () => {
-    try {
-      const txSig = await program.methods
-        .initialize()
-        .accounts({
-          counter: counterPDA,
-        })
-        .rpc();
-
-      // Fetch the counter account data
-      const accountData = await program.account.counter.fetch(counterPDA);
-
-      console.log(`Transaction Signature: ${txSig}`);
-      console.log(`Count: ${accountData.count}`);
-    } catch (error) {
-      // If PDA Account already created, then we expect an error
-      console.log(error);
-    }
-  });
 
   it("Create Mint Account with Transfer Hook Extension", async () => {
     const extensions = [ExtensionType.TransferHook];
@@ -129,9 +108,10 @@ describe("transfer-hook", () => {
       .accounts({
         payer: wallet.publicKey,
         extraAccount: extraAccountMetaListPDA,
-        counter: counterPDA,
         mint: mint.publicKey,
-        tokenProgram: TOKEN_2022_PROGRAM_ID,
+        wsolMint: NATIVE_MINT,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
       })
       .instruction();
 
@@ -142,7 +122,8 @@ describe("transfer-hook", () => {
     const txSig = await sendAndConfirmTransaction(
       provider.connection,
       transaction,
-      [wallet.payer]
+      [wallet.payer],
+      { skipPreflight: true }
     );
     console.log("Transaction Signature:", txSig);
   });
@@ -178,33 +159,52 @@ describe("transfer-hook", () => {
       )
     );
 
-    const txSig = await sendAndConfirmTransaction(connection, transaction, [
-      wallet.payer,
-    ]);
+    const txSig = await sendAndConfirmTransaction(
+      connection,
+      transaction,
+      [wallet.payer],
+      { skipPreflight: true }
+    );
 
     console.log(`Transaction Signature: ${txSig}`);
   });
 
   it("Transfer Hook with Extra Account Meta", async () => {
-    const [delegatePDA] = PublicKey.findProgramAddressSync(
-      [Buffer.from("delegate"), sourceTokenAccount.toBuffer()],
-      program.programId
-    );
+    // const [delegatePDA] = PublicKey.findProgramAddressSync(
+    //   [Buffer.from("delegate"), sourceTokenAccount.toBuffer()],
+    //   program.programId
+    // );
 
-    console.log("Delegate PDA:", delegatePDA.toBase58());
+    // console.log("Delegate PDA:", delegatePDA.toBase58());
 
     // 1 token
     const amount = 10 * 10 ** decimals;
 
-    // Approve delegate to transfer tokens
-    const approveInstruction = createApproveInstruction(
-      sourceTokenAccount,
-      delegatePDA,
-      wallet.publicKey,
-      amount,
-      [],
-      TOKEN_2022_PROGRAM_ID
+    // // Approve delegate to transfer tokens
+    // const approveInstruction = createApproveInstruction(
+    //   sourceTokenAccount,
+    //   delegatePDA,
+    //   wallet.publicKey,
+    //   amount,
+    //   [],
+    //   TOKEN_2022_PROGRAM_ID
+    // );
+
+    const wSOLTokenAccount = getAssociatedTokenAddressSync(
+      NATIVE_MINT, // mint
+      wallet.publicKey // owner
     );
+
+    // const solTransferInstruction = SystemProgram.transfer({
+    //   fromPubkey: wallet.publicKey,
+    //   toPubkey: wSOLTokenAccount,
+    //   lamports: LAMPORTS_PER_SOL,
+    // });
+
+    // const syncWrappedSolInstruction =
+    //   createSyncNativeInstruction(wSOLTokenAccount);
+
+    console.log("wSOL Token Account:", wSOLTokenAccount.toBase58());
 
     const transferInstruction = createTransferCheckedInstruction(
       sourceTokenAccount,
@@ -226,7 +226,9 @@ describe("transfer-hook", () => {
     );
 
     const transaction = new Transaction().add(
-      approveInstruction,
+      // solTransferInstruction,
+      // syncWrappedSolInstruction,
+      // approveInstruction,
       instructionWithExtraAccounts
     );
     const txSig = await sendAndConfirmTransaction(
@@ -237,77 +239,4 @@ describe("transfer-hook", () => {
     );
     console.log("Transfer Signature:", txSig);
   });
-
-  // it("Test", async () => {
-  //   // 1 token
-  //   const amount = 1 * 10 ** decimals;
-  //   const transferInstruction = createTransferCheckedInstruction(
-  //     sourceTokenAccount,
-  //     mint.publicKey,
-  //     destinationTokenAccount,
-  //     wallet.publicKey,
-  //     amount,
-  //     decimals,
-  //     [],
-  //     TOKEN_2022_PROGRAM_ID
-  //   );
-
-  //   const mintInfo = await getMint(
-  //     connection,
-  //     mint.publicKey,
-  //     "confirmed",
-  //     TOKEN_2022_PROGRAM_ID
-  //   );
-
-  //   const transferHook = getTransferHook(mintInfo);
-
-  //   const extraAccountsAccount = getExtraAccountMetaAddress(
-  //     mint.publicKey,
-  //     transferHook.programId
-  //   );
-
-  //   const extraAccountsInfo = await connection.getAccountInfo(
-  //     extraAccountsAccount
-  //   );
-
-  //   const extraAccountMetas = getExtraAccountMetas(extraAccountsInfo);
-  //   console.log("Extra Account Metas:", extraAccountMetas);
-
-  //   const accountMetas = transferInstruction.keys;
-
-  //   accountMetas.push({
-  //     pubkey: transferHook.programId,
-  //     isSigner: false,
-  //     isWritable: false,
-  //   });
-  //   accountMetas.push({
-  //     pubkey: extraAccountsAccount,
-  //     isSigner: false,
-  //     isWritable: false,
-  //   });
-  //   accountMetas.push({
-  //     pubkey: counterPDA,
-  //     isSigner: false,
-  //     isWritable: true,
-  //   });
-
-  //   // console.log("Account Metas:", accountMetas);
-
-  //   const instruction = new TransactionInstruction({
-  //     keys: accountMetas,
-  //     programId: TOKEN_2022_PROGRAM_ID,
-  //     data: transferInstruction.data,
-  //   });
-
-  //   console.log("Instruction:", instruction);
-
-  //   const transaction = new Transaction().add(instruction);
-  //   const txSig = await sendAndConfirmTransaction(
-  //     connection,
-  //     transaction,
-  //     [wallet.payer],
-  //     { skipPreflight: true }
-  //   );
-  //   console.log("Transfer Signature:", txSig);
-  // });
 });
