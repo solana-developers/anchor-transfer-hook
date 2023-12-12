@@ -60,6 +60,16 @@ describe("transfer-hook", () => {
     ASSOCIATED_TOKEN_PROGRAM_ID
   );
 
+  const [extraAccountMetaListPDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from("extra-account-metas"), mint.publicKey.toBuffer()],
+    program.programId
+  );
+
+  const wSOLTokenAccount = getAssociatedTokenAddressSync(
+    NATIVE_MINT, // mint
+    wallet.publicKey // owner
+  );
+
   it("Create Mint Account with Transfer Hook Extension", async () => {
     const extensions = [ExtensionType.TransferHook];
     const mintLen = getMintLen(extensions);
@@ -98,11 +108,6 @@ describe("transfer-hook", () => {
   });
 
   it("Create ExtraAccountMetaList Account", async () => {
-    const [extraAccountMetaListPDA] = PublicKey.findProgramAddressSync(
-      [Buffer.from("extra-account-metas"), mint.publicKey.toBuffer()],
-      program.programId
-    );
-
     const initializeExtraAccountMetaListInstruction = await program.methods
       .initializeExtraAccountMetaList()
       .accounts({
@@ -190,11 +195,6 @@ describe("transfer-hook", () => {
     //   TOKEN_2022_PROGRAM_ID
     // );
 
-    const wSOLTokenAccount = getAssociatedTokenAddressSync(
-      NATIVE_MINT, // mint
-      wallet.publicKey // owner
-    );
-
     // const solTransferInstruction = SystemProgram.transfer({
     //   fromPubkey: wallet.publicKey,
     //   toPubkey: wSOLTokenAccount,
@@ -203,8 +203,6 @@ describe("transfer-hook", () => {
 
     // const syncWrappedSolInstruction =
     //   createSyncNativeInstruction(wSOLTokenAccount);
-
-    console.log("wSOL Token Account:", wSOLTokenAccount.toBase58());
 
     const transferInstruction = createTransferCheckedInstruction(
       sourceTokenAccount,
@@ -224,6 +222,13 @@ describe("transfer-hook", () => {
       "confirmed",
       TOKEN_2022_PROGRAM_ID
     );
+
+    instructionWithExtraAccounts.keys.forEach((key, index) => {
+      console.log(`Key ${index}: ${key.pubkey.toBase58()}`);
+    });
+
+    console.log("\nExtraAccountMeta PDA:", extraAccountMetaListPDA.toBase58());
+    console.log("wSOL Token Account:", wSOLTokenAccount.toBase58());
 
     const transaction = new Transaction().add(
       // solTransferInstruction,

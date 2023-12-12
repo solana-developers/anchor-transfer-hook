@@ -36,14 +36,14 @@ pub mod transfer_hook {
             )
             .unwrap(),
             ExtraAccountMeta::new_external_pda_with_seeds(
-                7, // associated token program index
+                6, // associated token program index
                 &[
                     Seed::AccountKey { index: 3 }, // owner index
-                    Seed::AccountKey { index: 4 }, // token program index
-                    Seed::AccountKey { index: 5 }, // wsol mint index
+                    Seed::AccountKey { index: 5 }, // token program index
+                    Seed::AccountKey { index: 4 }, // wsol mint index
                 ],
                 false,
-                true,
+                false,
             )
             .unwrap(),
         ];
@@ -128,21 +128,27 @@ pub mod transfer_hook {
         accounts: &'info [AccountInfo<'info>],
         data: &[u8],
     ) -> Result<()> {
-        let instruction = TransferHookInstruction::unpack(data)?;
-        match instruction {
-            TransferHookInstruction::Execute { amount } => {
-                msg!("Instruction: Execute");
-
-                // Iterating through accounts and printing each with its index
-                for (index, account) in accounts.iter().enumerate() {
-                    msg!("Account Index: {}, Account: {:?}", index, account.key);
-                }
-
-                let amount_bytes = amount.to_le_bytes();
-                __private::__global::transfer_hook(program_id, accounts, &amount_bytes)
-            }
-            _ => return Err(ProgramError::InvalidInstructionData.into()),
+        msg!("Fallback Invoked");
+        // Iterating through accounts and printing each with its index
+        for (index, account) in accounts.iter().enumerate() {
+            msg!("Account Index: {}, Account: {:?}", index, account.key);
         }
+        Ok(())
+        // let instruction = TransferHookInstruction::unpack(data)?;
+        // match instruction {
+        //     TransferHookInstruction::Execute { amount } => {
+        //         msg!("Instruction: Execute");
+
+        //         // // Iterating through accounts and printing each with its index
+        //         // for (index, account) in accounts.iter().enumerate() {
+        //         //     msg!("Account Index: {}, Account: {:?}", index, account.key);
+        //         // }
+
+        //         let amount_bytes = amount.to_le_bytes();
+        //         __private::__global::transfer_hook(program_id, accounts, &amount_bytes)
+        //     }
+        //     _ => return Err(ProgramError::InvalidInstructionData.into()),
+        // }
     }
 }
 
@@ -175,20 +181,35 @@ pub struct TransferHook<'info> {
     /// CHECK: source token account owner, can be SystemAccount or PDA owned by another program
     pub owner: UncheckedAccount<'info>, // 3
 
-    /// CHECK: ExtraAccountMetaList Account, must use these seeds
-    #[account(
-        seeds = [b"extra-account-metas", mint.key().as_ref()], 
-        bump)
-    ]
-    pub extra_account: UncheckedAccount<'info>, // 4
-    pub wsol_mint: InterfaceAccount<'info, Mint>, // 5
-    pub token_program: Interface<'info, TokenInterface>, // 6
-    pub associated_token_program: Program<'info, AssociatedToken>, // 7
     /// CHECK:
-    pub wsol_token_account: UncheckedAccount<'info>,
-    // #[account(
-    //     seeds = [b"delegate", source_token.key().as_ref()],
-    //     bump,
-    // )]
-    // pub delegate: SystemAccount<'info>,
+    pub extra_account: UncheckedAccount<'info>, // 4
+    /// CHECK:
+    pub wsol_mint: UncheckedAccount<'info>, // 5
+    /// CHECK:
+    pub token_program: UncheckedAccount<'info>, // 6
+    /// CHECK:
+    pub associated_token_program: UncheckedAccount<'info>, // 7
+    /// CHECK:
+    pub wsol_token_account: UncheckedAccount<'info>, // 8
+
+                                                     // /// CHECK: ExtraAccountMetaList Account, must use these seeds
+                                                     // #[account(
+                                                     //     seeds = [b"extra-account-metas", mint.key().as_ref()],
+                                                     //     bump)
+                                                     // ]
+                                                     // pub extra_account: UncheckedAccount<'info>, // 4
+
+                                                     // pub wsol_mint: InterfaceAccount<'info, Mint>, // 4
+                                                     // pub token_program: Interface<'info, TokenInterface>, // 5
+                                                     // pub associated_token_program: Program<'info, AssociatedToken>, // 6
+                                                     // /// CHECK:
+                                                     // pub wsol_token_account: UncheckedAccount<'info>, //
+                                                     // /// CHECK:
+                                                     // pub program: UncheckedAccount<'info>,
+
+                                                     // #[account(
+                                                     //     seeds = [b"delegate", source_token.key().as_ref()],
+                                                     //     bump,
+                                                     // )]
+                                                     // pub delegate: SystemAccount<'info>,
 }
