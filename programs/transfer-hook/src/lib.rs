@@ -35,15 +35,26 @@ pub mod transfer_hook {
                 false,
             )
             .unwrap(),
+            // ExtraAccountMeta::new_with_seeds(
+            //     &[
+            //         Seed::AccountKey { index: 5 }, // wsol mint index
+            //     ],
+            //     false,
+            //     false,
+            // )
+            // .unwrap(),
+            // When resolving ExtraAccountMetaList accounts in the Token Extensions program,
+            // "index: 4" is address of ExtraAccountMetaList account
+            // The `addExtraAccountsToInstruction` JS helper function resolving incorrectly
             ExtraAccountMeta::new_external_pda_with_seeds(
-                6, // associated token program index
+                7, // associated token program index
                 &[
                     Seed::AccountKey { index: 3 }, // owner index
-                    Seed::AccountKey { index: 5 }, // token program index
-                    Seed::AccountKey { index: 4 }, // wsol mint index
+                    Seed::AccountKey { index: 6 }, // token program index
+                    Seed::AccountKey { index: 5 }, // wsol mint index
                 ],
                 false,
-                false,
+                true,
             )
             .unwrap(),
         ];

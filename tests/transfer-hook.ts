@@ -29,6 +29,7 @@ import {
   createSyncNativeInstruction,
   NATIVE_MINT,
   TOKEN_PROGRAM_ID,
+  getAccount,
 } from "@solana/spl-token";
 
 describe("transfer-hook", () => {
@@ -69,6 +70,26 @@ describe("transfer-hook", () => {
     NATIVE_MINT, // mint
     wallet.publicKey // owner
   );
+  it("Create wSOL Token Account", async () => {
+    const transaction = new Transaction().add(
+      createAssociatedTokenAccountInstruction(
+        wallet.publicKey,
+        wSOLTokenAccount,
+        wallet.publicKey,
+        NATIVE_MINT,
+        TOKEN_PROGRAM_ID,
+        ASSOCIATED_TOKEN_PROGRAM_ID
+      )
+    );
+
+    const txSig = await sendAndConfirmTransaction(
+      provider.connection,
+      transaction,
+      [wallet.payer],
+      { skipPreflight: true }
+    );
+    console.log("Transaction Signature:", txSig);
+  });
 
   it("Create Mint Account with Transfer Hook Extension", async () => {
     const extensions = [ExtensionType.TransferHook];
@@ -215,17 +236,56 @@ describe("transfer-hook", () => {
       TOKEN_2022_PROGRAM_ID
     );
 
-    const instructionWithExtraAccounts = await addExtraAccountsToInstruction(
-      connection,
-      transferInstruction,
-      mint.publicKey,
-      "confirmed",
-      TOKEN_2022_PROGRAM_ID
+    // const [testPDA] = PublicKey.findProgramAddressSync(
+    //   [new PublicKey("So11111111111111111111111111111111111111112").toBuffer()],
+    //   program.programId
+    // );
+
+    transferInstruction.keys.push(
+      {
+        pubkey: new PublicKey("So11111111111111111111111111111111111111112"),
+        isSigner: false,
+        isWritable: false,
+      },
+      {
+        pubkey: new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
+        isSigner: false,
+        isWritable: false,
+      },
+      {
+        pubkey: new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"),
+        isSigner: false,
+        isWritable: false,
+      },
+      {
+        pubkey: wSOLTokenAccount,
+        isSigner: false,
+        isWritable: true,
+      },
+      {
+        pubkey: program.programId,
+        isSigner: false,
+        isWritable: false,
+      },
+      {
+        pubkey: extraAccountMetaListPDA,
+        isSigner: false,
+        isWritable: false,
+      }
     );
 
-    instructionWithExtraAccounts.keys.forEach((key, index) => {
-      console.log(`Key ${index}: ${key.pubkey.toBase58()}`);
-    });
+    // // The `addExtraAccountsToInstruction` JS helper function resolving incorrectly
+    // const instructionWithExtraAccounts = await addExtraAccountsToInstruction(
+    //   connection,
+    //   transferInstruction,
+    //   mint.publicKey,
+    //   "confirmed",
+    //   TOKEN_2022_PROGRAM_ID
+    // );
+
+    // instructionWithExtraAccounts.keys.forEach((key, index) => {
+    //   console.log(`Key ${index}: ${key.pubkey.toBase58()}`);
+    // });
 
     console.log("\nExtraAccountMeta PDA:", extraAccountMetaListPDA.toBase58());
     console.log("wSOL Token Account:", wSOLTokenAccount.toBase58());
@@ -234,7 +294,9 @@ describe("transfer-hook", () => {
       // solTransferInstruction,
       // syncWrappedSolInstruction,
       // approveInstruction,
-      instructionWithExtraAccounts
+      // instructionWithExtraAccounts
+
+      transferInstruction
     );
     const txSig = await sendAndConfirmTransaction(
       connection,
