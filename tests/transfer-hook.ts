@@ -151,10 +151,10 @@ describe("transfer-hook", () => {
       .initializeExtraAccountMetaList()
       .accounts({
         payer: wallet.publicKey,
-        extraAccount: extraAccountMetaListPDA,
+        extraAccountMetaList: extraAccountMetaListPDA,
         mint: mint.publicKey,
         wsolMint: NATIVE_MINT,
-        delegateWsol: delegateWSolTokenAccount,
+        delegateWsolTokenAccount: delegateWSolTokenAccount,
         tokenProgram: TOKEN_PROGRAM_ID,
         associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
       })
