@@ -7,7 +7,6 @@ import {
   Transaction,
   sendAndConfirmTransaction,
   Keypair,
-  LAMPORTS_PER_SOL,
 } from "@solana/web3.js";
 import {
   ExtensionType,
@@ -21,8 +20,6 @@ import {
   createMintToInstruction,
   createTransferCheckedInstruction,
   getAssociatedTokenAddressSync,
-  getMint,
-  getTransferHook,
   getExtraAccountMetaAddress,
   getExtraAccountMetas,
   createApproveInstruction,
@@ -31,6 +28,7 @@ import {
   TOKEN_PROGRAM_ID,
   getAccount,
 } from "@solana/spl-token";
+import { assert } from "chai";
 
 describe("transfer-hook", () => {
   // Configure the client to use the local cluster.
@@ -42,7 +40,7 @@ describe("transfer-hook", () => {
   const connection = provider.connection;
 
   const mint = new Keypair();
-  const decimals = 2;
+  const decimals = 9;
 
   const sourceTokenAccount = getAssociatedTokenAddressSync(
     mint.publicKey,
@@ -66,16 +64,36 @@ describe("transfer-hook", () => {
     program.programId
   );
 
-  const wSOLTokenAccount = getAssociatedTokenAddressSync(
+  const [delegatePDA] = PublicKey.findProgramAddressSync(
+    [Buffer.from("delegate")],
+    program.programId
+  );
+
+  const senderWSolTokenAccount = getAssociatedTokenAddressSync(
     NATIVE_MINT, // mint
     wallet.publicKey // owner
   );
+
+  const delegateWSolTokenAccount = getAssociatedTokenAddressSync(
+    NATIVE_MINT, // mint
+    delegatePDA, // owner
+    true // allowOwnerOffCurve
+  );
+
   it("Create wSOL Token Account", async () => {
     const transaction = new Transaction().add(
       createAssociatedTokenAccountInstruction(
         wallet.publicKey,
-        wSOLTokenAccount,
+        senderWSolTokenAccount,
         wallet.publicKey,
+        NATIVE_MINT,
+        TOKEN_PROGRAM_ID,
+        ASSOCIATED_TOKEN_PROGRAM_ID
+      ),
+      createAssociatedTokenAccountInstruction(
+        wallet.publicKey,
+        delegateWSolTokenAccount,
+        delegatePDA,
         NATIVE_MINT,
         TOKEN_PROGRAM_ID,
         ASSOCIATED_TOKEN_PROGRAM_ID
@@ -136,6 +154,7 @@ describe("transfer-hook", () => {
         extraAccount: extraAccountMetaListPDA,
         mint: mint.publicKey,
         wsolMint: NATIVE_MINT,
+        delegateWsol: delegateWSolTokenAccount,
         tokenProgram: TOKEN_PROGRAM_ID,
         associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
       })
@@ -196,34 +215,28 @@ describe("transfer-hook", () => {
   });
 
   it("Transfer Hook with Extra Account Meta", async () => {
-    // const [delegatePDA] = PublicKey.findProgramAddressSync(
-    //   [Buffer.from("delegate"), sourceTokenAccount.toBuffer()],
-    //   program.programId
-    // );
+    // 1 tokens
+    const amount = 1 * 10 ** decimals;
 
-    // console.log("Delegate PDA:", delegatePDA.toBase58());
+    const solTransferInstruction = SystemProgram.transfer({
+      fromPubkey: wallet.publicKey,
+      toPubkey: senderWSolTokenAccount,
+      lamports: amount,
+    });
 
-    // 1 token
-    const amount = 10 * 10 ** decimals;
+    // Approve delegate to transfer tokens
+    const approveInstruction = createApproveInstruction(
+      senderWSolTokenAccount,
+      delegatePDA,
+      wallet.publicKey,
+      amount,
+      [],
+      TOKEN_PROGRAM_ID
+    );
 
-    // // Approve delegate to transfer tokens
-    // const approveInstruction = createApproveInstruction(
-    //   sourceTokenAccount,
-    //   delegatePDA,
-    //   wallet.publicKey,
-    //   amount,
-    //   [],
-    //   TOKEN_2022_PROGRAM_ID
-    // );
-
-    // const solTransferInstruction = SystemProgram.transfer({
-    //   fromPubkey: wallet.publicKey,
-    //   toPubkey: wSOLTokenAccount,
-    //   lamports: LAMPORTS_PER_SOL,
-    // });
-
-    // const syncWrappedSolInstruction =
-    //   createSyncNativeInstruction(wSOLTokenAccount);
+    const syncWrappedSolInstruction = createSyncNativeInstruction(
+      senderWSolTokenAccount
+    );
 
     const transferInstruction = createTransferCheckedInstruction(
       sourceTokenAccount,
@@ -235,11 +248,6 @@ describe("transfer-hook", () => {
       [],
       TOKEN_2022_PROGRAM_ID
     );
-
-    // const [testPDA] = PublicKey.findProgramAddressSync(
-    //   [new PublicKey("So11111111111111111111111111111111111111112").toBuffer()],
-    //   program.programId
-    // );
 
     transferInstruction.keys.push(
       {
@@ -258,7 +266,17 @@ describe("transfer-hook", () => {
         isWritable: false,
       },
       {
-        pubkey: wSOLTokenAccount,
+        pubkey: senderWSolTokenAccount,
+        isSigner: false,
+        isWritable: true,
+      },
+      {
+        pubkey: delegatePDA,
+        isSigner: false,
+        isWritable: true,
+      },
+      {
+        pubkey: delegateWSolTokenAccount,
         isSigner: false,
         isWritable: true,
       },
@@ -287,15 +305,10 @@ describe("transfer-hook", () => {
     //   console.log(`Key ${index}: ${key.pubkey.toBase58()}`);
     // });
 
-    console.log("\nExtraAccountMeta PDA:", extraAccountMetaListPDA.toBase58());
-    console.log("wSOL Token Account:", wSOLTokenAccount.toBase58());
-
     const transaction = new Transaction().add(
-      // solTransferInstruction,
-      // syncWrappedSolInstruction,
-      // approveInstruction,
-      // instructionWithExtraAccounts
-
+      solTransferInstruction,
+      syncWrappedSolInstruction,
+      approveInstruction,
       transferInstruction
     );
     const txSig = await sendAndConfirmTransaction(
@@ -305,5 +318,9 @@ describe("transfer-hook", () => {
       { skipPreflight: true }
     );
     console.log("Transfer Signature:", txSig);
+
+    const tokenAccount = await getAccount(connection, delegateWSolTokenAccount);
+
+    assert.equal(Number(tokenAccount.amount), amount);
   });
 });
