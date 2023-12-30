@@ -28,7 +28,7 @@ import {
   TOKEN_PROGRAM_ID,
   getAccount,
 } from "@solana/spl-token";
-import { assert } from "chai";
+import assert from "assert";
 
 describe("transfer-hook", () => {
   // Configure the client to use the local cluster.
@@ -39,9 +39,11 @@ describe("transfer-hook", () => {
   const wallet = provider.wallet as anchor.Wallet;
   const connection = provider.connection;
 
+  // Generate keypair to use as address for the transfer-hook enabled mint
   const mint = new Keypair();
   const decimals = 9;
 
+  // Sender token account address
   const sourceTokenAccount = getAssociatedTokenAddressSync(
     mint.publicKey,
     wallet.publicKey,
@@ -50,6 +52,7 @@ describe("transfer-hook", () => {
     ASSOCIATED_TOKEN_PROGRAM_ID
   );
 
+  // Recipient token account address
   const recipient = Keypair.generate();
   const destinationTokenAccount = getAssociatedTokenAddressSync(
     mint.publicKey,
@@ -59,27 +62,33 @@ describe("transfer-hook", () => {
     ASSOCIATED_TOKEN_PROGRAM_ID
   );
 
+  // ExtraAccountMetaList address
+  // Store extra accounts required by the custom transfer hook instruction
   const [extraAccountMetaListPDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("extra-account-metas"), mint.publicKey.toBuffer()],
     program.programId
   );
 
+  // PDA delegate to transfer wSOL tokens from sender
   const [delegatePDA] = PublicKey.findProgramAddressSync(
     [Buffer.from("delegate")],
     program.programId
   );
 
+  // Sender wSOL token account address
   const senderWSolTokenAccount = getAssociatedTokenAddressSync(
     NATIVE_MINT, // mint
     wallet.publicKey // owner
   );
 
+  // Delegate PDA wSOL token account address, to receive wSOL tokens from sender
   const delegateWSolTokenAccount = getAssociatedTokenAddressSync(
     NATIVE_MINT, // mint
     delegatePDA, // owner
     true // allowOwnerOffCurve
   );
 
+  // Create the two WSol token accounts as part of setup
   it("Create wSOL Token Account", async () => {
     const transaction = new Transaction().add(
       createAssociatedTokenAccountInstruction(
@@ -126,7 +135,7 @@ describe("transfer-hook", () => {
       createInitializeTransferHookInstruction(
         mint.publicKey,
         wallet.publicKey,
-        program.programId,
+        program.programId, // Transfer Hook Program ID
         TOKEN_2022_PROGRAM_ID
       ),
       createInitializeMintInstruction(
@@ -146,33 +155,8 @@ describe("transfer-hook", () => {
     console.log(`Transaction Signature: ${txSig}`);
   });
 
-  it("Create ExtraAccountMetaList Account", async () => {
-    const initializeExtraAccountMetaListInstruction = await program.methods
-      .initializeExtraAccountMetaList()
-      .accounts({
-        payer: wallet.publicKey,
-        extraAccountMetaList: extraAccountMetaListPDA,
-        mint: mint.publicKey,
-        wsolMint: NATIVE_MINT,
-        delegateWsolTokenAccount: delegateWSolTokenAccount,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-      })
-      .instruction();
-
-    const transaction = new Transaction().add(
-      initializeExtraAccountMetaListInstruction
-    );
-
-    const txSig = await sendAndConfirmTransaction(
-      provider.connection,
-      transaction,
-      [wallet.payer],
-      { skipPreflight: true }
-    );
-    console.log("Transaction Signature:", txSig);
-  });
-
+  // Create the two token accounts for the transfer-hook enabled mint
+  // Fund the sender token account with 100 tokens
   it("Create Token Accounts and Mint Tokens", async () => {
     // 100 tokens
     const amount = 100 * 10 ** decimals;
@@ -214,17 +198,46 @@ describe("transfer-hook", () => {
     console.log(`Transaction Signature: ${txSig}`);
   });
 
+  // Account to store extra accounts required by the transfer hook instruction
+  it("Create ExtraAccountMetaList Account", async () => {
+    const initializeExtraAccountMetaListInstruction = await program.methods
+      .initializeExtraAccountMetaList()
+      .accounts({
+        payer: wallet.publicKey,
+        extraAccountMetaList: extraAccountMetaListPDA,
+        mint: mint.publicKey,
+        wsolMint: NATIVE_MINT,
+        delegateWsolTokenAccount: delegateWSolTokenAccount,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+      })
+      .instruction();
+
+    const transaction = new Transaction().add(
+      initializeExtraAccountMetaListInstruction
+    );
+
+    const txSig = await sendAndConfirmTransaction(
+      provider.connection,
+      transaction,
+      [wallet.payer],
+      { skipPreflight: true }
+    );
+    console.log("Transaction Signature:", txSig);
+  });
+
   it("Transfer Hook with Extra Account Meta", async () => {
     // 1 tokens
     const amount = 1 * 10 ** decimals;
 
+    // Instruction for sender to fund their WSol token account
     const solTransferInstruction = SystemProgram.transfer({
       fromPubkey: wallet.publicKey,
       toPubkey: senderWSolTokenAccount,
       lamports: amount,
     });
 
-    // Approve delegate to transfer tokens
+    // Approve delegate PDA to transfer WSol tokens from sender WSol token account
     const approveInstruction = createApproveInstruction(
       senderWSolTokenAccount,
       delegatePDA,
@@ -234,10 +247,12 @@ describe("transfer-hook", () => {
       TOKEN_PROGRAM_ID
     );
 
+    // Sync sender WSol token account
     const syncWrappedSolInstruction = createSyncNativeInstruction(
       senderWSolTokenAccount
     );
 
+    // Standard token transfer instruction
     const transferInstruction = createTransferCheckedInstruction(
       sourceTokenAccount,
       mint.publicKey,
@@ -249,6 +264,9 @@ describe("transfer-hook", () => {
       TOKEN_2022_PROGRAM_ID
     );
 
+    // Automatic account resolution not working correctly for the WSol PDA
+    // Manually add all the extra accounts required by the transfer hook instruction
+    // Also include the address of the ExtraAccountMetaList account and Transfer Hook Program
     transferInstruction.keys.push(
       {
         pubkey: new PublicKey("So11111111111111111111111111111111111111112"),
@@ -292,19 +310,6 @@ describe("transfer-hook", () => {
       }
     );
 
-    // // The `addExtraAccountsToInstruction` JS helper function resolving incorrectly
-    // const instructionWithExtraAccounts = await addExtraAccountsToInstruction(
-    //   connection,
-    //   transferInstruction,
-    //   mint.publicKey,
-    //   "confirmed",
-    //   TOKEN_2022_PROGRAM_ID
-    // );
-
-    // instructionWithExtraAccounts.keys.forEach((key, index) => {
-    //   console.log(`Key ${index}: ${key.pubkey.toBase58()}`);
-    // });
-
     const transaction = new Transaction().add(
       solTransferInstruction,
       syncWrappedSolInstruction,
@@ -322,5 +327,69 @@ describe("transfer-hook", () => {
     const tokenAccount = await getAccount(connection, delegateWSolTokenAccount);
 
     assert.equal(Number(tokenAccount.amount), amount);
+  });
+
+  // Broken, "addExtraAccountsToInstruction" does not resolve WSol PDA correctly
+  it("Transfer Hook with Extra Account Meta, using addExtraAccountsToInstruction", async () => {
+    // 1 tokens
+    const amount = 1 * 10 ** decimals;
+
+    const solTransferInstruction = SystemProgram.transfer({
+      fromPubkey: wallet.publicKey,
+      toPubkey: senderWSolTokenAccount,
+      lamports: amount,
+    });
+
+    // Approve delegate to transfer tokens
+    const approveInstruction = createApproveInstruction(
+      senderWSolTokenAccount,
+      delegatePDA,
+      wallet.publicKey,
+      amount,
+      [],
+      TOKEN_PROGRAM_ID
+    );
+
+    const syncWrappedSolInstruction = createSyncNativeInstruction(
+      senderWSolTokenAccount
+    );
+
+    const transferInstruction = createTransferCheckedInstruction(
+      sourceTokenAccount,
+      mint.publicKey,
+      destinationTokenAccount,
+      wallet.publicKey,
+      amount,
+      decimals,
+      [],
+      TOKEN_2022_PROGRAM_ID
+    );
+
+    // The `addExtraAccountsToInstruction` JS helper function resolving incorrectly
+    const instructionWithExtraAccounts = await addExtraAccountsToInstruction(
+      connection,
+      transferInstruction,
+      mint.publicKey,
+      "confirmed",
+      TOKEN_2022_PROGRAM_ID
+    );
+
+    instructionWithExtraAccounts.keys.forEach((key, index) => {
+      console.log(`Key ${index}: ${key.pubkey.toBase58()}`);
+    });
+
+    const transaction = new Transaction().add(
+      solTransferInstruction,
+      syncWrappedSolInstruction,
+      approveInstruction,
+      instructionWithExtraAccounts
+    );
+    const txSig = await sendAndConfirmTransaction(
+      connection,
+      transaction,
+      [wallet.payer],
+      { skipPreflight: true }
+    );
+    console.log("Transfer Signature:", txSig);
   });
 });
