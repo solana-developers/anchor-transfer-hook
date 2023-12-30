@@ -27,6 +27,7 @@ import {
   NATIVE_MINT,
   TOKEN_PROGRAM_ID,
   getAccount,
+  getOrCreateAssociatedTokenAccount,
 } from "@solana/spl-token";
 import assert from "assert";
 
@@ -90,32 +91,47 @@ describe("transfer-hook", () => {
 
   // Create the two WSol token accounts as part of setup
   it("Create wSOL Token Account", async () => {
-    const transaction = new Transaction().add(
-      createAssociatedTokenAccountInstruction(
-        wallet.publicKey,
-        senderWSolTokenAccount,
-        wallet.publicKey,
-        NATIVE_MINT,
-        TOKEN_PROGRAM_ID,
-        ASSOCIATED_TOKEN_PROGRAM_ID
-      ),
-      createAssociatedTokenAccountInstruction(
-        wallet.publicKey,
-        delegateWSolTokenAccount,
-        delegatePDA,
-        NATIVE_MINT,
-        TOKEN_PROGRAM_ID,
-        ASSOCIATED_TOKEN_PROGRAM_ID
-      )
+    // WSol Token Account for sender
+    await getOrCreateAssociatedTokenAccount(
+      connection,
+      wallet.payer,
+      NATIVE_MINT,
+      wallet.publicKey
     );
 
-    const txSig = await sendAndConfirmTransaction(
-      provider.connection,
-      transaction,
-      [wallet.payer],
-      { skipPreflight: true }
+    // WSol Token Account for delegate PDA
+    await getOrCreateAssociatedTokenAccount(
+      connection,
+      wallet.payer,
+      NATIVE_MINT,
+      delegatePDA,
+      true
     );
-    console.log("Transaction Signature:", txSig);
+    // const transaction = new Transaction().add(
+    //   createAssociatedTokenAccountInstruction(
+    //     wallet.publicKey,
+    //     senderWSolTokenAccount,
+    //     wallet.publicKey,
+    //     NATIVE_MINT,
+    //     TOKEN_PROGRAM_ID,
+    //     ASSOCIATED_TOKEN_PROGRAM_ID
+    //   ),
+    //   createAssociatedTokenAccountInstruction(
+    //     wallet.publicKey,
+    //     delegateWSolTokenAccount,
+    //     delegatePDA,
+    //     NATIVE_MINT,
+    //     TOKEN_PROGRAM_ID,
+    //     ASSOCIATED_TOKEN_PROGRAM_ID
+    //   )
+    // );
+    // const txSig = await sendAndConfirmTransaction(
+    //   provider.connection,
+    //   transaction,
+    //   [wallet.payer],
+    //   { skipPreflight: true }
+    // );
+    // console.log("Transaction Signature:", txSig);
   });
 
   it("Create Mint Account with Transfer Hook Extension", async () => {
