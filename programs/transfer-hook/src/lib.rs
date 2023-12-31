@@ -36,18 +36,7 @@ pub mod transfer_hook {
                 false,
                 false,
             )?,
-            // index 8, sender wrapped SOL token account
-            ExtraAccountMeta::new_external_pda_with_seeds(
-                7, // associated token program index
-                &[
-                    Seed::AccountKey { index: 3 }, // owner index
-                    Seed::AccountKey { index: 6 }, // token program index
-                    Seed::AccountKey { index: 5 }, // wsol mint index
-                ],
-                false, // is_signer
-                true,  // is_writable
-            )?,
-            // index 9, delegate PDA
+            // index 8, delegate PDA
             ExtraAccountMeta::new_with_seeds(
                 &[Seed::Literal {
                     bytes: "delegate".as_bytes().to_vec(),
@@ -55,9 +44,25 @@ pub mod transfer_hook {
                 false, // is_signer
                 true,  // is_writable
             )?,
-            // index 10, delegate wrapped SOL token account
-            ExtraAccountMeta::new_with_pubkey(
-                &ctx.accounts.delegate_wsol_token_account.key(),
+            // index 9, delegate wrapped SOL token account
+            ExtraAccountMeta::new_external_pda_with_seeds(
+                7, // associated token program index
+                &[
+                    Seed::AccountKey { index: 8 }, // owner index (delegate PDA)
+                    Seed::AccountKey { index: 6 }, // token program index
+                    Seed::AccountKey { index: 5 }, // wsol mint index
+                ],
+                false, // is_signer
+                true,  // is_writable
+            )?,
+            // index 10, sender wrapped SOL token account
+            ExtraAccountMeta::new_external_pda_with_seeds(
+                7, // associated token program index
+                &[
+                    Seed::AccountKey { index: 3 }, // owner index
+                    Seed::AccountKey { index: 6 }, // token program index
+                    Seed::AccountKey { index: 5 }, // wsol mint index
+                ],
                 false, // is_signer
                 true,  // is_writable
             )?,
@@ -155,12 +160,11 @@ pub struct InitializeExtraAccountMetaList<'info> {
     #[account(
         mut,
         seeds = [b"extra-account-metas", mint.key().as_ref()], 
-        bump)
-    ]
+        bump
+    )]
     pub extra_account_meta_list: AccountInfo<'info>,
     pub mint: InterfaceAccount<'info, Mint>,
     pub wsol_mint: InterfaceAccount<'info, Mint>,
-    pub delegate_wsol_token_account: InterfaceAccount<'info, TokenAccount>,
     pub token_program: Interface<'info, TokenInterface>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
@@ -187,23 +191,17 @@ pub struct TransferHook<'info> {
     /// CHECK: ExtraAccountMetaList Account,
     #[account(
         seeds = [b"extra-account-metas", mint.key().as_ref()], 
-        bump)
-    ]
+        bump
+    )]
     pub extra_account_meta_list: UncheckedAccount<'info>,
     pub wsol_mint: InterfaceAccount<'info, Mint>,
     pub token_program: Interface<'info, TokenInterface>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     #[account(
         mut,
-        token::mint = wsol_mint, 
-        token::authority = owner,
-    )]
-    pub sender_wsol_token_account: InterfaceAccount<'info, TokenAccount>,
-    #[account(
-        mut,
         seeds = [b"delegate"], 
-        bump)
-    ]
+        bump
+    )]
     pub delegate: SystemAccount<'info>,
     #[account(
         mut,
@@ -211,4 +209,10 @@ pub struct TransferHook<'info> {
         token::authority = delegate,
     )]
     pub delegate_wsol_token_account: InterfaceAccount<'info, TokenAccount>,
+    #[account(
+        mut,
+        token::mint = wsol_mint, 
+        token::authority = owner,
+    )]
+    pub sender_wsol_token_account: InterfaceAccount<'info, TokenAccount>,
 }
