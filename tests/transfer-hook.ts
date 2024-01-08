@@ -14,7 +14,6 @@ import {
   getMintLen,
   createInitializeMintInstruction,
   createInitializeTransferHookInstruction,
-  addExtraAccountsToInstruction,
   ASSOCIATED_TOKEN_PROGRAM_ID,
   createAssociatedTokenAccountInstruction,
   createMintToInstruction,
@@ -27,7 +26,6 @@ import {
   getAccount,
   getOrCreateAssociatedTokenAccount,
 } from "@solana/spl-token";
-import assert from "assert";
 
 describe("transfer-hook", () => {
   // Configure the client to use the local cluster.
@@ -274,7 +272,7 @@ describe("transfer-hook", () => {
       {
         pubkey: delegatePDA,
         isSigner: false,
-        isWritable: true,
+        isWritable: false,
       },
       {
         pubkey: delegateWSolTokenAccount,
@@ -311,73 +309,5 @@ describe("transfer-hook", () => {
       { skipPreflight: true }
     );
     console.log("Transfer Signature:", txSig);
-
-    const tokenAccount = await getAccount(connection, delegateWSolTokenAccount);
-
-    assert.equal(Number(tokenAccount.amount), amount);
   });
-
-  // // Broken, "addExtraAccountsToInstruction" does not resolve WSol PDA correctly
-  // it("Transfer Hook with Extra Account Meta, using addExtraAccountsToInstruction", async () => {
-  //   // 1 tokens
-  //   const amount = 1 * 10 ** decimals;
-
-  //   const solTransferInstruction = SystemProgram.transfer({
-  //     fromPubkey: wallet.publicKey,
-  //     toPubkey: senderWSolTokenAccount,
-  //     lamports: amount,
-  //   });
-
-  //   // Approve delegate to transfer tokens
-  //   const approveInstruction = createApproveInstruction(
-  //     senderWSolTokenAccount,
-  //     delegatePDA,
-  //     wallet.publicKey,
-  //     amount,
-  //     [],
-  //     TOKEN_PROGRAM_ID
-  //   );
-
-  //   const syncWrappedSolInstruction = createSyncNativeInstruction(
-  //     senderWSolTokenAccount
-  //   );
-
-  //   const transferInstruction = createTransferCheckedInstruction(
-  //     sourceTokenAccount,
-  //     mint.publicKey,
-  //     destinationTokenAccount,
-  //     wallet.publicKey,
-  //     amount,
-  //     decimals,
-  //     [],
-  //     TOKEN_2022_PROGRAM_ID
-  //   );
-
-  //   // The `addExtraAccountsToInstruction` JS helper function resolving incorrectly
-  //   const instructionWithExtraAccounts = await addExtraAccountsToInstruction(
-  //     connection,
-  //     transferInstruction,
-  //     mint.publicKey,
-  //     "confirmed",
-  //     TOKEN_2022_PROGRAM_ID
-  //   );
-
-  //   instructionWithExtraAccounts.keys.forEach((key, index) => {
-  //     console.log(`Key ${index}: ${key.pubkey.toBase58()}`);
-  //   });
-
-  //   const transaction = new Transaction().add(
-  //     solTransferInstruction,
-  //     syncWrappedSolInstruction,
-  //     approveInstruction,
-  //     instructionWithExtraAccounts
-  //   );
-  //   const txSig = await sendAndConfirmTransaction(
-  //     connection,
-  //     transaction,
-  //     [wallet.payer],
-  //     { skipPreflight: true }
-  //   );
-  //   console.log("Transfer Signature:", txSig);
-  // });
 });

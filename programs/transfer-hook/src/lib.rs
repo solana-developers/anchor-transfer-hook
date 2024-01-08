@@ -42,7 +42,7 @@ pub mod transfer_hook {
                     bytes: "delegate".as_bytes().to_vec(),
                 }],
                 false, // is_signer
-                true,  // is_writable
+                false,  // is_writable
             )?,
             // index 9, delegate wrapped SOL token account
             ExtraAccountMeta::new_external_pda_with_seeds(
@@ -198,7 +198,6 @@ pub struct TransferHook<'info> {
     pub token_program: Interface<'info, TokenInterface>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     #[account(
-        mut,
         seeds = [b"delegate"], 
         bump
     )]
