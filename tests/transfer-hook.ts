@@ -23,7 +23,6 @@ import {
   createSyncNativeInstruction,
   NATIVE_MINT,
   TOKEN_PROGRAM_ID,
-  getAccount,
   getOrCreateAssociatedTokenAccount,
 } from "@solana/spl-token";
 
