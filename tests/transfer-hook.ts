@@ -14,7 +14,6 @@ import {
   getMintLen,
   createInitializeMintInstruction,
   createInitializeTransferHookInstruction,
-  addExtraAccountsToInstruction,
   ASSOCIATED_TOKEN_PROGRAM_ID,
   createAssociatedTokenAccountInstruction,
   createMintToInstruction,
@@ -27,7 +26,6 @@ import {
   getAccount,
   getOrCreateAssociatedTokenAccount,
 } from "@solana/spl-token";
-import assert from "assert";
 
 describe("transfer-hook", () => {
   // Configure the client to use the local cluster.
