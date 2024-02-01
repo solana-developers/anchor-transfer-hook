@@ -13,10 +13,12 @@ use spl_transfer_hook_interface::instruction::{ExecuteInstruction, TransferHookI
 
 // transfer-hook program that charges a SOL fee on token transfer
 // use a delegate and wrapped SOL because signers from initial transfer are not accessible
+
 declare_id!("DrWbQtYJGtsoRwzKqAbHKHKsCJJfpysudF39GBVFSxub");
 
 #[program]
 pub mod transfer_hook {
+
     use super::*;
 
     pub fn initialize_extra_account_meta_list(
@@ -42,7 +44,7 @@ pub mod transfer_hook {
                     bytes: "delegate".as_bytes().to_vec(),
                 }],
                 false, // is_signer
-                false,  // is_writable
+                true,  // is_writable
             )?,
             // index 9, delegate wrapped SOL token account
             ExtraAccountMeta::new_external_pda_with_seeds(
@@ -65,7 +67,7 @@ pub mod transfer_hook {
                 ],
                 false, // is_signer
                 true,  // is_writable
-            )?,
+            )?
         ];
 
         // calculate account size
@@ -104,12 +106,9 @@ pub mod transfer_hook {
         Ok(())
     }
 
-    // Require SOL fee on transfer, lamport fee is equal to transfer amount
-    // If this fails, the initial token transfer fails
     pub fn transfer_hook(ctx: Context<TransferHook>, amount: u64) -> Result<()> {
-        msg!("Transfer WSOL using delegate PDA");
-
-        let signer_seeds: &[&[&[u8]]] = &[&[b"delegate", &[ctx.bumps.delegate]]];
+       let signer_seeds: &[&[&[u8]]] = &[&[b"delegate", &[ctx.bumps.delegate]]];
+       msg!("Transfer WSOL using delegate PDA");
 
         // transfer WSOL from sender to delegate token account using delegate PDA
         transfer_checked(
@@ -198,6 +197,7 @@ pub struct TransferHook<'info> {
     pub token_program: Interface<'info, TokenInterface>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     #[account(
+        mut,
         seeds = [b"delegate"], 
         bump
     )]

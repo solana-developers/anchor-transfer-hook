@@ -17,14 +17,20 @@ import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
   createAssociatedTokenAccountInstruction,
   createMintToInstruction,
-  createTransferCheckedInstruction,
   getAssociatedTokenAddressSync,
   createApproveInstruction,
   createSyncNativeInstruction,
   NATIVE_MINT,
   TOKEN_PROGRAM_ID,
+  getAccount,
   getOrCreateAssociatedTokenAccount,
+  createTransferCheckedWithTransferHookInstruction,
+  getMint,
+  getTransferHook,
+  getExtraAccountMetaAddress,
+  getExtraAccountMetas,
 } from "@solana/spl-token";
+import assert from "assert";
 
 describe("transfer-hook", () => {
   // Configure the client to use the local cluster.
@@ -206,7 +212,7 @@ describe("transfer-hook", () => {
       provider.connection,
       transaction,
       [wallet.payer],
-      { skipPreflight: true }
+      { skipPreflight: true, commitment : "confirmed"}
     );
     console.log("Transaction Signature:", txSig);
   });
@@ -214,6 +220,7 @@ describe("transfer-hook", () => {
   it("Transfer Hook with Extra Account Meta", async () => {
     // 1 tokens
     const amount = 1 * 10 ** decimals;
+    const bigIntAmount = BigInt(amount);
 
     // Instruction for sender to fund their WSol token account
     const solTransferInstruction = SystemProgram.transfer({
@@ -238,62 +245,20 @@ describe("transfer-hook", () => {
     );
 
     // Standard token transfer instruction
-    const transferInstruction = createTransferCheckedInstruction(
+    const transferInstruction = await createTransferCheckedWithTransferHookInstruction(
+      connection,
       sourceTokenAccount,
       mint.publicKey,
       destinationTokenAccount,
       wallet.publicKey,
-      amount,
+      bigIntAmount,
       decimals,
       [],
+      "confirmed",
       TOKEN_2022_PROGRAM_ID
     );
 
-    // Automatic account resolution not working correctly for the WSol PDA
-    // Manually add all the extra accounts required by the transfer hook instruction
-    // Also include the address of the ExtraAccountMetaList account and Transfer Hook Program
-    transferInstruction.keys.push(
-      {
-        pubkey: new PublicKey("So11111111111111111111111111111111111111112"),
-        isSigner: false,
-        isWritable: false,
-      },
-      {
-        pubkey: new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
-        isSigner: false,
-        isWritable: false,
-      },
-      {
-        pubkey: new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"),
-        isSigner: false,
-        isWritable: false,
-      },
-      {
-        pubkey: delegatePDA,
-        isSigner: false,
-        isWritable: false,
-      },
-      {
-        pubkey: delegateWSolTokenAccount,
-        isSigner: false,
-        isWritable: true,
-      },
-      {
-        pubkey: senderWSolTokenAccount,
-        isSigner: false,
-        isWritable: true,
-      },
-      {
-        pubkey: program.programId,
-        isSigner: false,
-        isWritable: false,
-      },
-      {
-        pubkey: extraAccountMetaListPDA,
-        isSigner: false,
-        isWritable: false,
-      }
-    );
+    console.log("Pushed keys:", JSON.stringify(transferInstruction.keys));
 
     const transaction = new Transaction().add(
       solTransferInstruction,
@@ -301,6 +266,7 @@ describe("transfer-hook", () => {
       approveInstruction,
       transferInstruction
     );
+    
     const txSig = await sendAndConfirmTransaction(
       connection,
       transaction,
@@ -308,5 +274,9 @@ describe("transfer-hook", () => {
       { skipPreflight: true }
     );
     console.log("Transfer Signature:", txSig);
+
+    const tokenAccount = await getAccount(connection, delegateWSolTokenAccount);
+    
+    assert.equal(Number(tokenAccount.amount), amount);
   });
 });
