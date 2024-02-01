@@ -18,7 +18,8 @@ import {
   createAssociatedTokenAccountInstruction,
   createMintToInstruction,
   getAssociatedTokenAddressSync,
-  createTransferCheckedWithTransferHookInstruction
+  createTransferCheckedWithTransferHookInstruction,
+  getExtraAccountMetas
 } from "@solana/spl-token";
 
 describe("transfer-hook", () => {
@@ -97,7 +98,8 @@ describe("transfer-hook", () => {
     const txSig = await sendAndConfirmTransaction(
       provider.connection,
       transaction,
-      [wallet.payer, mint]
+      [wallet.payer, mint],
+      { skipPreflight: true, commitment: "confirmed"}
     );
 
     console.log(`Transaction Signature: ${txSig}`);
@@ -140,7 +142,7 @@ describe("transfer-hook", () => {
       connection,
       transaction,
       [wallet.payer],
-      { skipPreflight: true }
+      { skipPreflight: true, commitment: "confirmed"}
     );
 
     console.log(`Transaction Signature: ${txSig}`);
@@ -148,7 +150,12 @@ describe("transfer-hook", () => {
 
   // Account to store extra accounts required by the transfer hook instruction
   it("Create ExtraAccountMetaList Account", async () => {
-    const initializeExtraAccountMetaListInstruction = await program.methods
+    const extraAccountMetasInfo = await connection.getAccountInfo(extraAccountMetaListPDA);
+    
+    console.log("Extra accounts meta: " + extraAccountMetasInfo);
+
+    if (extraAccountMetasInfo === null) {
+      const initializeExtraAccountMetaListInstruction = await program.methods
       .initializeExtraAccountMetaList()
       .accounts({
         mint: mint.publicKey,
@@ -157,17 +164,19 @@ describe("transfer-hook", () => {
       })
       .instruction();
 
-    const transaction = new Transaction().add(
-      initializeExtraAccountMetaListInstruction
-    );
+      const transaction = new Transaction().add(
+        initializeExtraAccountMetaListInstruction
+      );
 
-    const txSig = await sendAndConfirmTransaction(
-      provider.connection,
-      transaction,
-      [wallet.payer],
-      { skipPreflight: true, commitment: "confirmed"}
-    );
-    console.log("Transaction Signature:", txSig);
+      const txSig = await sendAndConfirmTransaction(
+        provider.connection,
+        transaction,
+        [wallet.payer],
+        { skipPreflight: true, commitment: "confirmed"}
+      );
+      console.log("Transaction Signature:", txSig);
+    }
+
   });
 
   it("Transfer Hook with Extra Account Meta", async () => {

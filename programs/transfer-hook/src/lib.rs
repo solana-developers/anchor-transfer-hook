@@ -11,7 +11,7 @@ use spl_tlv_account_resolution::{
 };
 use spl_transfer_hook_interface::instruction::{ExecuteInstruction, TransferHookInstruction};
 
-declare_id!("DrWbQtYJGtsoRwzKqAbHKHKsCJJfpysudF39GBVFSxub");
+declare_id!("GrRNrGNoaRU47svzEseTSsD3dmPz9nCUVPDynFuW5WRm");
 
 #[error_code]
 pub enum MyError {
@@ -124,7 +124,7 @@ pub struct InitializeExtraAccountMetaList<'info> {
     pub extra_account_meta_list: AccountInfo<'info>,
     pub mint: InterfaceAccount<'info, Mint>,
     #[account(
-        init,
+        init_if_needed,
         seeds = [b"counter"], 
         bump,
         payer = payer,
