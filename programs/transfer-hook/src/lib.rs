@@ -4,70 +4,26 @@ use anchor_lang::{
 };
 use anchor_spl::{
     associated_token::AssociatedToken,
-    token_interface::{transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked},
+    token_interface::{Mint, TokenAccount, TokenInterface},
 };
 use spl_tlv_account_resolution::{
-    account::ExtraAccountMeta, seeds::Seed, state::ExtraAccountMetaList,
+    state::ExtraAccountMetaList,
 };
 use spl_transfer_hook_interface::instruction::{ExecuteInstruction, TransferHookInstruction};
-
-// transfer-hook program that charges a SOL fee on token transfer
-// use a delegate and wrapped SOL because signers from initial transfer are not accessible
 
 declare_id!("DrWbQtYJGtsoRwzKqAbHKHKsCJJfpysudF39GBVFSxub");
 
 #[program]
 pub mod transfer_hook {
-
     use super::*;
 
     pub fn initialize_extra_account_meta_list(
         ctx: Context<InitializeExtraAccountMetaList>,
     ) -> Result<()> {
-        // index 0-3 are the accounts required for token transfer (source, mint, destination, owner)
-        // index 4 is address of ExtraAccountMetaList account
+
         // The `addExtraAccountsToInstruction` JS helper function resolving incorrectly
         let account_metas = vec![
-            // index 5, wrapped SOL mint
-            ExtraAccountMeta::new_with_pubkey(&ctx.accounts.wsol_mint.key(), false, false)?,
-            // index 6, token program
-            ExtraAccountMeta::new_with_pubkey(&ctx.accounts.token_program.key(), false, false)?,
-            // index 7, associated token program
-            ExtraAccountMeta::new_with_pubkey(
-                &ctx.accounts.associated_token_program.key(),
-                false,
-                false,
-            )?,
-            // index 8, delegate PDA
-            ExtraAccountMeta::new_with_seeds(
-                &[Seed::Literal {
-                    bytes: "delegate".as_bytes().to_vec(),
-                }],
-                false, // is_signer
-                true,  // is_writable
-            )?,
-            // index 9, delegate wrapped SOL token account
-            ExtraAccountMeta::new_external_pda_with_seeds(
-                7, // associated token program index
-                &[
-                    Seed::AccountKey { index: 8 }, // owner index (delegate PDA)
-                    Seed::AccountKey { index: 6 }, // token program index
-                    Seed::AccountKey { index: 5 }, // wsol mint index
-                ],
-                false, // is_signer
-                true,  // is_writable
-            )?,
-            // index 10, sender wrapped SOL token account
-            ExtraAccountMeta::new_external_pda_with_seeds(
-                7, // associated token program index
-                &[
-                    Seed::AccountKey { index: 3 }, // owner index
-                    Seed::AccountKey { index: 6 }, // token program index
-                    Seed::AccountKey { index: 5 }, // wsol mint index
-                ],
-                false, // is_signer
-                true,  // is_writable
-            )?
+            
         ];
 
         // calculate account size
@@ -107,24 +63,9 @@ pub mod transfer_hook {
     }
 
     pub fn transfer_hook(ctx: Context<TransferHook>, amount: u64) -> Result<()> {
-       let signer_seeds: &[&[&[u8]]] = &[&[b"delegate", &[ctx.bumps.delegate]]];
-       msg!("Transfer WSOL using delegate PDA");
 
-        // transfer WSOL from sender to delegate token account using delegate PDA
-        transfer_checked(
-            CpiContext::new(
-                ctx.accounts.token_program.to_account_info(),
-                TransferChecked {
-                    from: ctx.accounts.sender_wsol_token_account.to_account_info(),
-                    mint: ctx.accounts.wsol_mint.to_account_info(),
-                    to: ctx.accounts.delegate_wsol_token_account.to_account_info(),
-                    authority: ctx.accounts.delegate.to_account_info(),
-                },
-            )
-            .with_signer(signer_seeds),
-            amount,
-            ctx.accounts.wsol_mint.decimals,
-        )?;
+        msg!("Hello Transfer Hook!");
+
         Ok(())
     }
 
@@ -163,7 +104,6 @@ pub struct InitializeExtraAccountMetaList<'info> {
     )]
     pub extra_account_meta_list: AccountInfo<'info>,
     pub mint: InterfaceAccount<'info, Mint>,
-    pub wsol_mint: InterfaceAccount<'info, Mint>,
     pub token_program: Interface<'info, TokenInterface>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
@@ -193,25 +133,4 @@ pub struct TransferHook<'info> {
         bump
     )]
     pub extra_account_meta_list: UncheckedAccount<'info>,
-    pub wsol_mint: InterfaceAccount<'info, Mint>,
-    pub token_program: Interface<'info, TokenInterface>,
-    pub associated_token_program: Program<'info, AssociatedToken>,
-    #[account(
-        mut,
-        seeds = [b"delegate"], 
-        bump
-    )]
-    pub delegate: SystemAccount<'info>,
-    #[account(
-        mut,
-        token::mint = wsol_mint, 
-        token::authority = delegate,
-    )]
-    pub delegate_wsol_token_account: InterfaceAccount<'info, TokenAccount>,
-    #[account(
-        mut,
-        token::mint = wsol_mint, 
-        token::authority = owner,
-    )]
-    pub sender_wsol_token_account: InterfaceAccount<'info, TokenAccount>,
 }
