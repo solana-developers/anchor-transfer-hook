@@ -161,6 +161,7 @@ pub struct TransferHook<'info> {
     )]
     pub extra_account_meta_list: UncheckedAccount<'info>,
     #[account(
+        mut,
         seeds = [b"counter"],
         bump
     )]
